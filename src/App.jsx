@@ -1,9 +1,14 @@
 import React from "react";
-
+import {Routes,Route} from "react-router-dom"
+import Home from "./pages/Home";
+import ERC721 from "./pages/ERC721";
 export default function App() {
   return (
     <div>
-      <h1 className="text-3xl font-bold underline">Hello world!</h1>
+      <Routes>
+        <Route path="/" element={<Home/>}></Route>
+        <Route path='/ERC721' element={<ERC721/>}></Route>
+      </Routes>
     </div>
   );
 }
