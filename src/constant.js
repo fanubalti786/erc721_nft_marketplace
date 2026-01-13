@@ -1,4 +1,4 @@
-export const erc721Address = "0x216d0A0CD08fcbD6B41ECa6D034a797B7d228cC4";
+export const erc721Address = "0x19e2a1a430537Ac1e48A2Ca632A8fE844f3B7039";
 
 export const erc721Abi = [
   {
@@ -294,16 +294,9 @@ export const erc721Abi = [
     inputs: [],
     name: "getAllListings",
     outputs: [
-      {
-        components: [
-          { internalType: "address", name: "seller", type: "address" },
-          { internalType: "uint256", name: "price", type: "uint256" },
-        ],
-        internalType: "struct MyToken.Listing[]",
-        name: "",
-        type: "tuple[]",
-      },
-      { internalType: "uint256[]", name: "tokenId", type: "uint256[]" },
+      { internalType: "address[]", name: "sellers", type: "address[]" },
+      { internalType: "uint256[]", name: "prices", type: "uint256[]" },
+      { internalType: "uint256[]", name: "tokenIds", type: "uint256[]" },
     ],
     stateMutability: "view",
     type: "function",

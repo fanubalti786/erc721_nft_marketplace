@@ -74,6 +74,7 @@ export default function ERC721() {
       setChainIdNumber(Number(network.chainId));
       const owner = await myContract.owner();
       setOwnerAddress(owner);
+      fetchListings();
     } catch (err) {
       console.error(err);
       alert("Failed to connect wallet!");
@@ -188,6 +189,40 @@ export default function ERC721() {
     }
   };
 
+  const fetchListings = async () => {
+    if (!contract) return;
+    try {
+      setLoadingListings(true);
+
+      const [sellers, prices, tokenIds] = await contract.getAllListings();
+
+      const listingsArray = await Promise.all(
+        tokenIds.map(async (tokenId, index) => {
+          const tokenUri = await contract.tokenURI(tokenId);
+          let metadata = {};
+          try {
+            const res = await fetch(tokenUri);
+            metadata = await res.json();
+          } catch (err) {}
+          return {
+            tokenId: tokenId.toString(),
+            seller: sellers[index],
+            price: ethers.formatEther(prices[index]),
+            metadata,
+          };
+        })
+      );
+      console.log(listingsArray); // ab real array milega
+      console.log("hello");
+      setListings(listingsArray);
+      console.log(listings);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoadingListings(false);
+    }
+  };
+
   const handleListNFT = async (e) => {
     e.preventDefault();
     if (!contract) return alert("Contract not Connected");
@@ -201,43 +236,32 @@ export default function ERC721() {
       const tx = await contract.listing(Number(tokenId), priceInWei);
       await tx.wait();
       alert(`NFT listed successfully at ${price} ETH!`);
+      fetchListings();
     } catch (error) {
       console.log(`Error listing NFT: ${error}`);
       alert(`failed to list NFT, check console for details`);
     }
   };
 
-
-
-  const fetchListings = async () => {
-    if(!contract) return;
+  const handleBuyNFT = async (tokenId, price) => {
+    if (!contract) return alert("Wallet not connected");
     try {
-      setLoadingListings(true);
-      const [listingData, tokenIds] = await contract.getAllListings();
-      const listingsArray = await Promis.all(
-        tokenIds.map(async (tokenId, index) => {
-          const tokenUri = await contract.tokenURI(tokenId);
-          const reciept = await tx.wait();
-          let metadata = {};
-          try {
-            const res = await fetch(tokenUri);
-            metadata = await res.json();
-          } catch (error) {
-            console.warn("could't fetch metadata for ", tokenUri);
-          }
-          return {
-            tokenId: tokenId.toString(),
-            seller: listingData[index].seller,
-            price: ethers.formatEther(listingData[index].price),
-            metadata
-          }
-        })
-      )
-    } catch (error) {
-      
+      const tx = await contract.buyNFT(Number(tokenId), {
+        value: ethers.parseEther(price.toString()),
+      });
+      await tx.wait();
+      alert(`NFT ${tokenId} bought successfully!`);
+      fetchListings();
+    } catch (err) {
+      console.error(err);
+      alert(showError(err));
     }
+  };
 
-  }
+  useEffect(() => {
+    if (!contract) return;
+    fetchListings();
+  }, [contract]);
 
   useEffect(() => {
     if (!window.ethereum) return;
@@ -460,31 +484,31 @@ export default function ERC721() {
             NFT Marketplace
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {listingEvents.length === 0 ? (
+            {listings.length === 0 ? (
               <p className="text-gray-400 col-span-full text-center">
-                No NFTs listed yet.
+                No NFTs listed yet. {}
               </p>
             ) : (
-              listingEvents.map((nft, idx) => (
+              listings.map((nft, idx) => (
                 <div
                   key={idx}
                   className="bg-white/5 backdrop-blur rounded-2xl border border-white/10 shadow-lg overflow-hidden flex flex-col hover:scale-105 transition-transform"
                 >
                   {/* ===== Optional Image ===== */}
-                  {/* <div className="h-48 w-full bg-black/30 flex items-center justify-center">
+                  { <div className="h-48 w-full bg-black/30 flex items-center justify-center">
             <img
-              src={nft.image || "/placeholder.png"}
+              src={nft.metadata.image || "/placeholder.png"}
               alt={`NFT ${nft.tokenId}`}
               className="object-cover h-full w-full"
             />
-          </div> */}
+          </div> }
 
                   <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
                       {/* ===== Optional Name ===== */}
-                      {/* <h3 className="text-sm font-semibold text-indigo-200">
-                {nft.name || `NFT #${nft.tokenId}`}
-              </h3> */}
+                      <h3 className="text-sm font-semibold text-indigo-200">
+                {nft.metadata.name || `NFT #${nft.tokenId}`}
+              </h3>
 
                       <p className="text-sm text-indigo-200">
                         Token ID: {nft.tokenId}
@@ -497,7 +521,7 @@ export default function ERC721() {
                       </p>
                     </div>
 
-                    {nft.seller.toLowerCase() !== account?.toLowerCase() ? (
+                    {true ? (
                       <button
                         onClick={() => handleBuyNFT(nft.tokenId, nft.price)}
                         className="mt-3 w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium hover:scale-105 transition-transform"
