@@ -521,7 +521,7 @@ export default function ERC721() {
                       </p>
                     </div>
 
-                    {true ? (
+                    {nft.seller.toLowerCase() !== account?.toLowerCase() ? (
                       <button
                         onClick={() => handleBuyNFT(nft.tokenId, nft.price)}
                         className="mt-3 w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium hover:scale-105 transition-transform"
