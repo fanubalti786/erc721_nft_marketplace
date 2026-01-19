@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { ethers } from "ethers";
+import { Contract, ethers } from "ethers";
 import axios from "axios";
 import { erc721Address, erc721Abi } from "../constant";
 
@@ -24,10 +24,19 @@ export default function ERC721() {
 
   // --- get all listings data ---
   const [listings, setListings] = useState([]);
+
+  // --- show different kinds of loading
+  const [loadingMint, setLoadingMint] = useState(false);
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingBuy, setLoadingBuy] = useState({});
+  const [loadingCancel, setLoadingCancel] = useState({});
   const [loadingListings, setLoadingListings] = useState(false);
 
-  // TX hashes
-  const [nftMintedHash, setnftMintedHash] = useState("");
+  // // TX hashes
+  const [nftMintedHash, setNftMintedHash] = useState("");
+  const [nftListedHash, setNftListedHash] = useState("");
+  const [nftBuyingHash, setNftBuyingHash] = useState("");
+  const [nftCancelHash, setNftCancelHash] = useState("");
 
   // Past Events
   const [listingEvents, setListingEvents] = useState([]);
@@ -57,6 +66,14 @@ export default function ERC721() {
     // Fallback
     return "Transaction failed. Check console for details.";
   };
+
+
+
+  const getTxLink = (hash) => {
+  if (!hash) return null;
+  return `https://sepolia.etherscan.io/tx/${hash}`;
+};
+
 
   // ---------- Wallet connect ----------
   const connectWallet = async () => {
@@ -91,10 +108,8 @@ export default function ERC721() {
           url: "https://api.pinata.cloud/pinning/pinFileToIPFS",
           data: formData,
           headers: {
-            pinata_api_key: "febc8bcc2e0247748719",
-            pinata_secret_api_key:
-              "0b23f6b60caf043d5718d773b8c4d877048a5f63966e1c4399e5d2bc733fd0d3",
-            "Content-Type": "multipart/form-data",
+            pinata_api_key: "f2a1537946f7ac7eb5d2",
+            pinata_secret_api_key: "4ca84e4c8535bc94a9f9e1c87711a4925c59a23146ec68cb28746b3656db2d00",
           },
         });
 
@@ -116,12 +131,17 @@ export default function ERC721() {
       return;
     }
 
+    setLoadingMint(true);
+    // console.log("hello", import.meta.env.VITE_PINATA_API_KEY);
+    // console.log("hello", import.meta.env.VITE_PINATA_SECRET_API_KEY);
+    // console.log("hello", import.meta.env.VITE_PINATA_JWT);
+
     const CID = await uploadToIPFS(image);
     if (!CID) return alert("image upload failed.");
-    console.log("image CID : ", CID);
 
     const metadataCID = await pinJSONToIPFS(nftName, description, CID);
-    console.log("Metadata CID : ", metadataCID);
+    if (!metadataCID) return alert("metadata upload failed.");
+  
 
     const metadataUrl = `https://gateway.pinata.cloud/ipfs/${metadataCID}`;
     console.log("metadata URL: ", metadataUrl);
@@ -132,14 +152,17 @@ export default function ERC721() {
     // call the contract safeMint function
     try {
       const tx = await contract.safeMint(metadataUrl);
-      const reciept = await tx.wait();
-      setnftMintedHash(reciept.hash);
-      // Extract Event from reciept
-      const event = reciept.logs
+      setNftMintedHash(tx.hash);
+      const receipt = await tx.wait();
+
+      // Filter logs from this contract only
+      const event = receipt.logs
         .map((log) => {
           try {
             return contract.interface.parseLog(log);
-          } catch (error) {}
+          } catch (err) {
+            return null;
+          }
         })
         .find((parsed) => parsed && parsed.name === "NFTMinted");
 
@@ -148,7 +171,7 @@ export default function ERC721() {
         console.log("NFT minted with Token ID: ", tokenId);
         alert(`NFT minted! Token ID: ${tokenId}`);
       } else {
-        alert("NFTMinted not found in reciept");
+        alert("NFTMinted not found in receipt");
       }
 
       setNftName("");
@@ -156,6 +179,8 @@ export default function ERC721() {
       setImage(null);
     } catch (error) {
       showError(error);
+    } finally {
+      setLoadingMint(false);
     }
   };
 
@@ -173,11 +198,10 @@ export default function ERC721() {
           method: "POST",
           headers: {
             "Content-type": "application/json",
-            Authorization:
-              "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiIxZjRkOGQ5OC00YzMwLTRhNmEtYmExNC0zNzcyMTZkZTJhYjAiLCJlbWFpbCI6ImZhbnViYWx0aTc4NkBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiZmViYzhiY2MyZTAyNDc3NDg3MTkiLCJzY29wZWRLZXlTZWNyZXQiOiIwYjIzZjZiNjBjYWYwNDNkNTcxOGQ3NzNiOGM0ZDg3NzA0OGE1ZjYzOTY2ZTFjNDM5OWU1ZDJiYzczM2ZkMGQzIiwiZXhwIjoxNzk5NzUwOTA1fQ.4kzAsIDdbHUfxViazyj3aXzMlr9G1zL3ymoVNlnFY0s",
+            Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiIxZjRkOGQ5OC00YzMwLTRhNmEtYmExNC0zNzcyMTZkZTJhYjAiLCJlbWFpbCI6ImZhbnViYWx0aTc4NkBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwicGluX3BvbGljeSI6eyJyZWdpb25zIjpbeyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJGUkExIn0seyJkZXNpcmVkUmVwbGljYXRpb25Db3VudCI6MSwiaWQiOiJOWUMxIn1dLCJ2ZXJzaW9uIjoxfSwibWZhX2VuYWJsZWQiOmZhbHNlLCJzdGF0dXMiOiJBQ1RJVkUifSwiYXV0aGVudGljYXRpb25UeXBlIjoic2NvcGVkS2V5Iiwic2NvcGVkS2V5S2V5IjoiZjJhMTUzNzk0NmY3YWM3ZWI1ZDIiLCJzY29wZWRLZXlTZWNyZXQiOiI0Y2E4NGU0Yzg1MzViYzk0YTlmOWUxYzg3NzExYTQ5MjVjNTlhMjMxNDZlYzY4Y2IyODc0NmIzNjU2ZGIyZDAwIiwiZXhwIjoxODAwMjk5OTA3fQ.7c2H9WXAdVrNJcTuflDYmXYQok5F2OazUy7IBi1k8EE`,
           },
           body: data,
-        }
+        },
       );
 
       const resData = await res.json();
@@ -193,15 +217,19 @@ export default function ERC721() {
     if (!contract) return;
     try {
       setLoadingListings(true);
+      let count = 0;
 
       const [sellers, prices, tokenIds] = await contract.getAllListings();
 
       const listingsArray = await Promise.all(
         tokenIds.map(async (tokenId, index) => {
           const tokenUri = await contract.tokenURI(tokenId);
+          console.log("tokenUri: ",count++, tokenUri);
           let metadata = {};
           try {
             const res = await fetch(tokenUri);
+            console.log("res :", res);
+
             metadata = await res.json();
           } catch (err) {}
           return {
@@ -210,12 +238,10 @@ export default function ERC721() {
             price: ethers.formatEther(prices[index]),
             metadata,
           };
-        })
+        }),
       );
-      console.log(listingsArray); // ab real array milega
-      console.log("hello");
       setListings(listingsArray);
-      console.log(listings);
+      console.log("listings : ",listings);
     } catch (error) {
       console.error(error);
     } finally {
@@ -232,29 +258,69 @@ export default function ERC721() {
     }
 
     try {
+      setLoadingList(true);
       const priceInWei = ethers.parseEther(price.toString());
       const tx = await contract.listing(Number(tokenId), priceInWei);
+      setNftListedHash(tx.hash);
       await tx.wait();
       alert(`NFT listed successfully at ${price} ETH!`);
       fetchListings();
+      setPrice("");
+      setTokenId("");
     } catch (error) {
       console.log(`Error listing NFT: ${error}`);
       alert(`failed to list NFT, check console for details`);
+    } finally {
+      setLoadingList(false);
     }
   };
 
   const handleBuyNFT = async (tokenId, price) => {
     if (!contract) return alert("Wallet not connected");
+
     try {
+      // Set loading true for this specific tokenId
+      setLoadingBuy((prev) => ({ ...prev, [tokenId]: true }));
+
       const tx = await contract.buyNFT(Number(tokenId), {
         value: ethers.parseEther(price.toString()),
       });
+      setNftBuyingHash(tx.hash);
       await tx.wait();
+
       alert(`NFT ${tokenId} bought successfully!`);
       fetchListings();
     } catch (err) {
       console.error(err);
       alert(showError(err));
+    } finally {
+      // Set loading false for this tokenId
+      setLoadingBuy((prev) => ({ ...prev, [tokenId]: false }));
+    }
+  };
+
+  const cancelListing = async (tokenId) => {
+    if (!contract) {
+      alert("Wallet is not connected");
+      return;
+    }
+
+    try {
+      // Set loading for this specific tokenId
+      setLoadingCancel((prev) => ({ ...prev, [tokenId]: true }));
+
+      const tx = await contract.cancelListing(Number(tokenId));
+      setNftCancelHash(tx.hash);
+      await tx.wait();
+
+      alert(`Listing for NFT #${tokenId} has been successfully cancelled.`);
+      fetchListings();
+    } catch (error) {
+      console.error("Cancel listing failed:", error);
+      alert(showError(error));
+    } finally {
+      // Reset loading for this tokenId
+      setLoadingCancel((prev) => ({ ...prev, [tokenId]: false }));
     }
   };
 
@@ -304,71 +370,97 @@ export default function ERC721() {
     return () => {
       window.ethereum.removeListener("accountsChanged", syncWallet);
       window.ethereum.removeListener("chainChanged", () =>
-        window.location.reload()
+        window.location.reload(),
       );
     };
   }, []);
 
-  useEffect(() => {
-    if (!contract) return;
+  // useEffect(() => {
+  //   if (!contract) return;
 
-    const fetchPastEvents = async () => {
-      try {
-        // Get All NFt Listed
-        const pastNFTListed = await contract.queryFilter(
-          contract.filters.NFTListed(),
-          0,
-          "latest"
-        );
-        setListingEvents(
-          pastNFTListed
-            .map((e) => ({
-              tokenId: e.args.tokenId.toString(),
-              seller: e.args.seller,
-              price: Number(e.args.price),
-            }))
-            .reverse()
-        );
-      } catch (err) {
-        console.error("Error fetching past events:", err);
-      }
-    };
-    // // Real-time listeners
-    // const handleUserRegistered = (wallet, name, age, event) => {
-    //   setUserRegisteredEvents((prev) => [
-    //     { wallet, name, age: Number(age), txHash: event.transactionHash },
-    //     ...prev,
-    //   ]);
-    // };
-    // const handleUserUpdated = (wallet, name, event) => {
-    //   setUserUpdatedEvents((prev) => [
-    //     { wallet, name, txHash: event.transactionHash },
-    //     ...prev,
-    //   ]);
-    // };
+  //   const fetchPastEvents = async () => {
+  //     try {
+  //       // Get all past NFTListed events
+  //       const events = await contract.queryFilter(
+  //         contract.filters.NFTListed(),
+  //         0,
+  //         "latest",
+  //       );
 
-    // contract.on("UserRegistered", handleUserRegistered);
-    // contract.on("UserUpdated", handleUserUpdated);
+  //       console.log(events.length);
 
-    // return () => {
-    //   contract.off("UserRegistered", handleUserRegistered);
-    //   contract.off("UserUpdated", handleUserUpdated);
+  //       // Resolve metadata for each event
+  //       const listings = await Promise.all(
+  //         events.map(async (e) => {
+  //           const { tokenId, seller, price } = e.args;
 
-    // };
-    fetchPastEvents();
-  }, [contract]);
+  //           let metadata = {};
+  //           try {
+  //             const tokenUri = await contract.tokenURI(tokenId);
+              
+  //             const res = await fetch(tokenUri);
+  //             console.log("hellogmadam");
+
+  //             metadata = await res.json();
+  //           } catch (err) {
+  //             console.warn("Metadata fetch failed:", err);
+  //           }
+
+  //           return {
+  //             tokenId: tokenId.toString(),
+  //             seller,
+  //             price: ethers.formatEther(price),
+  //             metadata,
+  //           };
+  //         }),
+  //       );
+  //       console.log(listings);
+  //       setListingEvents(listings);
+  //     } catch (err) {
+  //       console.error("Error fetching past events:", err);
+  //     }
+  //   };
+
+  //   // Real-time listener
+  //   const handleNFTListed = async (tokenId, seller, price) => {
+  //     let metadata = {};
+  //     try {
+  //       const tokenUri = await contract.tokenURI(tokenId);
+  //       const res = await fetch(tokenUri);
+  //       metadata = await res.json();
+  //     } catch (err) {}
+
+  //     setListingEvents((prev) => [
+  //       {
+  //         tokenId: tokenId.toString(),
+  //         seller,
+  //         price: ethers.formatEther(price),
+  //         metadata,
+  //       },
+  //       ...prev,
+  //     ]);
+  //   };
+
+  //   contract.on("NFTListed", handleNFTListed);
+  //   fetchPastEvents();
+
+  //   // Cleanup (VERY IMPORTANT)
+  //   return () => {
+  //     contract.off("NFTListed", handleNFTListed);
+  //   };
+  // }, [contract]);
 
   // ---------- Layout UI ----------
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-[#0b1220] to-[#070b18] p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[#0b1220]/80 to-[#070b18] p-6">
       <div className="max-w-7xl mx-auto">
-        {/* ========== Header ========== */}
-        <header className="flex flex-col sm:flex-row items-center justify-between mb-10 gap-4 sm:gap-0">
+        {/* ===== Header ===== */}
+        <header className="flex flex-col sm:flex-row items-center justify-between mb-12 gap-4 sm:gap-0">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 to-purple-300">
-              ERC721 Dashboard
+            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+              ERC721 Marketplace
             </h1>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-sm text-gray-400 mt-1">
               Sepolia Testnet • NFT Demo
             </p>
           </div>
@@ -376,7 +468,7 @@ export default function ERC721() {
           {!account ? (
             <button
               onClick={connectWallet}
-              className="px-6 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold shadow-lg hover:scale-105 transition-transform"
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold shadow-lg hover:scale-105 transition-transform duration-300"
             >
               Connect Wallet
             </button>
@@ -388,32 +480,78 @@ export default function ERC721() {
           )}
         </header>
 
-        {/* ========== Layout Grid ========== */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* ===== Left Panel: Wallet Info ===== */}
-          <div>
-            <div className="rounded-2xl bg-white/5 backdrop-blur border border-white/10 p-6 shadow-lg">
-              <h3 className="text-sm font-semibold text-indigo-200 mb-3">
-                Wallet Info
-              </h3>
-              {!account ? (
-                <p className="text-xs text-gray-400">
-                  Connect wallet to continue
+        {/* ===== Wallet & Actions Panel ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+          {/* Wallet Info */}
+          <div className="rounded-2xl bg-white/5 backdrop-blur border border-white/10 p-6 shadow-lg">
+            <h3 className="text-sm font-semibold text-indigo-200 mb-4">
+              Wallet Info
+            </h3>
+
+            {!account ? (
+              <p className="text-xs text-gray-400">
+                Connect wallet to continue
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-200 break-all">{account}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Owner: {ownerAddress || "—"}
                 </p>
-              ) : (
-                <>
-                  <p className="text-sm text-gray-200 break-all">{account}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Owner: {ownerAddress || "—"}
-                  </p>
-                </>
-              )}
-            </div>
+
+                {/* ===== TX HASHES ===== */}
+                <div className="mt-4 space-y-2 text-xs">
+                  {nftMintedHash && (
+                    <a
+                      href={getTxLink(nftMintedHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-indigo-400 hover:underline break-all"
+                    >
+                      🟣 Mint Tx: {nftMintedHash}
+                    </a>
+                  )}
+
+                  {nftListedHash && (
+                    <a
+                      href={getTxLink(nftListedHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-emerald-400 hover:underline break-all"
+                    >
+                      🟢 List Tx: {nftListedHash}
+                    </a>
+                  )}
+
+                  {nftBuyingHash && (
+                    <a
+                      href={getTxLink(nftBuyingHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-teal-400 hover:underline break-all"
+                    >
+                      🔵 Buy Tx: {nftBuyingHash}
+                    </a>
+                  )}
+
+                  {nftCancelHash && (
+                    <a
+                      href={getTxLink(nftCancelHash)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-red-400 hover:underline break-all"
+                    >
+                      🔴 Cancel Tx: {nftCancelHash}
+                    </a>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* ===== Right Panel: Forms ===== */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* ==== Mint NFT ==== */}
+          {/* Mint & List NFTs */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            {/* Mint NFT */}
             <div className="rounded-2xl bg-white/5 backdrop-blur border border-white/10 p-6 shadow-lg">
               <h2 className="text-lg font-semibold text-indigo-200 mb-5">
                 Mint New NFT
@@ -424,14 +562,14 @@ export default function ERC721() {
                   placeholder="NFT Name"
                   value={nftName}
                   onChange={(e) => setNftName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:ring-1 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white placeholder-gray-400 focus:ring-1 focus:ring-indigo-500"
                 />
                 <textarea
                   rows="2"
                   placeholder="Description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:ring-1 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white placeholder-gray-400 focus:ring-1 focus:ring-indigo-500"
                 />
                 <input
                   type="file"
@@ -441,14 +579,27 @@ export default function ERC721() {
                 />
                 <button
                   type="submit"
-                  className="w-full py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold hover:scale-105 transition-transform"
+                  disabled={loadingList}
+                  className={`w-full py-2 rounded-lg text-white font-semibold transition-all duration-300
+    ${
+      loadingMint
+        ? "bg-gray-600 cursor-not-allowed"
+        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:scale-105 cursor-pointer"
+    }`}
                 >
-                  Mint NFT
+                  {loadingMint ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Minting NFT...</span>
+                    </div>
+                  ) : (
+                    "Mint NFT"
+                  )}
                 </button>
               </form>
             </div>
 
-            {/* ==== List NFT ==== */}
+            {/* List NFT */}
             <div className="rounded-2xl bg-white/5 backdrop-blur border border-white/10 p-6 shadow-lg">
               <h2 className="text-lg font-semibold text-emerald-300 mb-5">
                 List NFT for Sale
@@ -456,82 +607,137 @@ export default function ERC721() {
               <form onSubmit={handleListNFT} className="space-y-4 text-sm">
                 <input
                   type="number"
-                  onChange={(e) => setTokenId(e.target.value)}
+                  value={tokenId}
                   placeholder="Token ID"
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:ring-1 focus:ring-emerald-500"
+                  onChange={(e) => setTokenId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white placeholder-gray-400 focus:ring-1 focus:ring-emerald-500"
                 />
                 <input
                   type="number"
-                  onChange={(e) => setPrice(e.target.value)}
-                  step="0.0001"
+                  value={price}
                   placeholder="Price (ETH)"
-                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white focus:ring-1 focus:ring-emerald-500"
+                  step="0.0001"
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-white placeholder-gray-400 focus:ring-1 focus:ring-emerald-500"
                 />
                 <button
                   type="submit"
-                  className="w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:scale-105 transition-transform"
+                  disabled={loadingList}
+                  className={`w-full py-2 rounded-lg text-white font-semibold transition-all duration-300
+                 ${
+                   loadingList
+                     ? "bg-gray-600 cursor-not-allowed"
+                     : "bg-gradient-to-r from-emerald-500 to-teal-500 hover:scale-105 cursor-pointer"
+                 }`}
                 >
-                  List NFT
+                  {loadingList ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Listing NFT...</span>
+                    </div>
+                  ) : (
+                    "List NFT"
+                  )}
                 </button>
               </form>
             </div>
           </div>
         </div>
 
-        {/* ========== NFT Marketplace Cards ======= */}
+        {/* ===== NFT Marketplace Cards ===== */}
         <div className="mt-10">
-          <h2 className="text-lg font-semibold text-indigo-200 mb-6">
+          <h2 className="text-xl font-semibold text-indigo-200 mb-6">
             NFT Marketplace
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {listings.length === 0 ? (
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {loadingListings ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-16">
+                <div className="w-10 h-10 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-indigo-200 text-lg font-medium tracking-wide">
+                  Fetching NFT listings...
+                </p>
+              </div>
+            ) : listings.length === 0 ? (
               <p className="text-gray-400 col-span-full text-center">
-                No NFTs listed yet. {}
+                No NFTs listed yet.
               </p>
             ) : (
               listings.map((nft, idx) => (
                 <div
                   key={idx}
-                  className="bg-white/5 backdrop-blur rounded-2xl border border-white/10 shadow-lg overflow-hidden flex flex-col hover:scale-105 transition-transform"
+                  className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl shadow-lg overflow-hidden flex flex-col hover:scale-105 hover:shadow-2xl transition-transform duration-300"
                 >
-                  {/* ===== Optional Image ===== */}
-                  { <div className="h-48 w-full bg-black/30 flex items-center justify-center">
-            <img
-              src={nft.metadata.image || "/placeholder.png"}
-              alt={`NFT ${nft.tokenId}`}
-              className="object-cover h-full w-full"
-            />
-          </div> }
+                  {/* NFT Image */}
+                  <div className="h-60 w-full bg-black/20 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={nft.metadata?.image || "/placeholder.png"}
+                      alt={`NFT ${nft.tokenId}`}
+                      className="object-cover h-full w-full transition-transform duration-300 hover:scale-110"
+                    />
+                  </div>
 
+                  {/* NFT Info */}
                   <div className="p-4 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* ===== Optional Name ===== */}
                       <h3 className="text-sm font-semibold text-indigo-200">
-                {nft.metadata.name || `NFT #${nft.tokenId}`}
-              </h3>
+                        {nft.metadata?.nftName || "Unnamed NFT"}
+                      </h3>
 
-                      <p className="text-sm text-indigo-200">
+                      <p className="text-xs text-gray-400 mt-1">
                         Token ID: {nft.tokenId}
                       </p>
+
                       <p className="text-xs text-gray-400 mt-1 break-words">
                         Seller: {nft.seller}
                       </p>
+
                       <p className="text-xs text-gray-400 mt-1">
                         Price: {nft.price} ETH
                       </p>
                     </div>
 
+                    {/* Action Buttons */}
                     {nft.seller.toLowerCase() !== account?.toLowerCase() ? (
                       <button
                         onClick={() => handleBuyNFT(nft.tokenId, nft.price)}
-                        className="mt-3 w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium hover:scale-105 transition-transform"
+                        disabled={loadingBuy[nft.tokenId]}
+                        className={`mt-3 w-full py-2 rounded-lg text-white font-medium transition-all duration-300
+    ${
+      loadingBuy[nft.tokenId]
+        ? "bg-gray-600 cursor-not-allowed"
+        : "bg-gradient-to-r from-emerald-500 to-teal-500 hover:scale-105 cursor-pointer"
+    }`}
                       >
-                        Buy NFT
+                        {loadingBuy[nft.tokenId] ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Processing Purchase...</span>
+                          </div>
+                        ) : (
+                          "Buy NFT"
+                        )}
                       </button>
                     ) : (
-                      <p className="mt-3 text-xs text-gray-400 text-center">
-                        You listed this NFT
-                      </p>
+                      <button
+                        onClick={() => cancelListing(nft.tokenId)}
+                        disabled={loadingCancel[nft.tokenId]}
+                        className={`cursor-pointer mt-3 w-full py-2 rounded-lg text-white font-medium transition-all duration-300
+    ${
+      loadingCancel[nft.tokenId]
+        ? "bg-gray-600 cursor-not-allowed"
+        : "bg-gradient-to-r from-red-500 to-pink-500 hover:scale-105"
+    }`}
+                      >
+                        {loadingCancel[nft.tokenId] ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <span>Cancelling...</span>
+                          </div>
+                        ) : (
+                          "Cancel Listing"
+                        )}
+                      </button>
                     )}
                   </div>
                 </div>
